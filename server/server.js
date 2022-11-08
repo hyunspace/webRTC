@@ -3,7 +3,6 @@ const http = require("http");
 const { v4: uuidv4 } = require("uuid");
 const cors = require("cors");
 const twilio = require("twilio");
-const { disconnect } = require("process");
 
 const PORT = process.env.PORT || 5002;
 const app = express();
@@ -29,6 +28,24 @@ app.get("/api/room-exists/:roomId", (req, res) => {
   } else {
     // send response that room does not exists
     return res.send({ roomExists: false });
+  }
+});
+
+app.get("/api/get-turn-credentials", (req, res) => {
+  const accountSid = "AC7cff1792ce0f8d410f4790a5048eeeb7";
+  const authToken = "c9f5e65fe22c2e6764d5ca5530d4970c";
+
+  const client = twilio(accountSid, authToken);
+
+  res.send({ token: null });
+  try {
+    client.tokens.create().then((token) => {
+      res.send({ token });
+    });
+  } catch (err) {
+    console.log("error occurred when fetching turn server credentials");
+    console.log(err);
+    res.send({ token: null });
   }
 });
 
@@ -61,6 +78,10 @@ io.on("connection", (socket) => {
   socket.on("conn-init", (data) => {
     initializeConnectionHandler(data, socket);
   });
+
+  socket.on("direct-message", (data) => {
+    directMessageHandler(data, socket);
+  });
 });
 
 // socket.io handlers
@@ -68,7 +89,7 @@ io.on("connection", (socket) => {
 const createNewRoomHandler = (data, socket) => {
   console.log("host is creating new room");
   console.log(data);
-  const { identity } = data;
+  const { identity, onlyAudio } = data;
 
   const roomId = uuidv4();
 
@@ -78,6 +99,7 @@ const createNewRoomHandler = (data, socket) => {
     id: uuidv4(),
     socketId: socket.id,
     roomId,
+    onlyAudio,
   };
 
   // push that user to connectedUsers
@@ -102,13 +124,14 @@ const createNewRoomHandler = (data, socket) => {
 };
 
 const joinRoomHandler = (data, socket) => {
-  const { identity, roomId } = data;
+  const { identity, roomId, onlyAudio } = data;
 
   const newUser = {
     identity,
     id: uuidv4(),
     socketId: socket.id,
     roomId,
+    onlyAudio,
   };
 
   // join room as user which just is trying to join room passing room id
@@ -178,6 +201,31 @@ const initializeConnectionHandler = (data, socket) => {
 
   const initData = { connUserSocketId: socket.id };
   io.to(connUserSocketId).emit("conn-init", initData);
+};
+
+const directMessageHandler = (data, socket) => {
+  if (
+    connectedUsers.find(
+      (connUser) => connUser.socketId === data.receiverSocketId
+    )
+  ) {
+    const receiverData = {
+      authorSocketId: socket.id,
+      messageContent: data.messageContent,
+      isAuthor: false,
+      identity: data.identity,
+    };
+    socket.to(data.receiverSocketId).emit("direct-message", receiverData);
+
+    const authorData = {
+      receiverSocketId: data.receiverSocketId,
+      messageContent: data.messageContent,
+      isAuthor: true,
+      identity: data.identity,
+    };
+
+    socket.emit("direct-message", authorData);
+  }
 };
 
 server.listen(PORT, () => {
