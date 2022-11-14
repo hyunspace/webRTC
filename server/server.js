@@ -117,11 +117,6 @@ io.on("connection", (socket) => {
 
 const createNewRoomHandler = (data, socket) => {
   console.log("host is creating new room");
-<<<<<<< HEAD
-=======
-  console.log(data);
-  const { identity, onlyAudio } = data;
->>>>>>> feeb7ea335cd97e46cff21bb63f8153ab8719a5c
 
   const { identity, videoId, learningRecordId, roomId, guildId } = data;
 
@@ -130,11 +125,7 @@ const createNewRoomHandler = (data, socket) => {
     identity,
     socketId: socket.id,
     roomId,
-<<<<<<< HEAD
     learningRecordId,
-=======
-    onlyAudio,
->>>>>>> feeb7ea335cd97e46cff21bb63f8153ab8719a5c
   };
 
   // push that user to connectedUsers
@@ -162,21 +153,13 @@ const createNewRoomHandler = (data, socket) => {
 };
 
 const joinRoomHandler = (data, socket) => {
-<<<<<<< HEAD
   const { identity, roomId, learningRecordId } = data;
-=======
-  const { identity, roomId, onlyAudio } = data;
->>>>>>> feeb7ea335cd97e46cff21bb63f8153ab8719a5c
 
   const newUser = {
     identity,
     socketId: socket.id,
     roomId,
-<<<<<<< HEAD
     learningRecordId,
-=======
-    onlyAudio,
->>>>>>> feeb7ea335cd97e46cff21bb63f8153ab8719a5c
   };
 
   // join room as user which just is trying to join room passing room id
