@@ -1,9 +1,7 @@
 const express = require("express");
 const http = require("http");
-const { v4: uuidv4 } = require("uuid");
 const cors = require("cors");
 const twilio = require("twilio");
-const { disconnect } = require("process");
 
 const PORT = process.env.PORT || 5002;
 const app = express();
@@ -15,20 +13,50 @@ let connectedUsers = [];
 let rooms = [];
 
 // create route to check if room exists
-app.get("/api/room-exists/:roomId", (req, res) => {
-  const { roomId } = req.params;
-  const room = rooms.find((room) => room.id === roomId);
+app.get("/api/room-exists/:guildId", (req, res) => {
+  let { guildId } = req.params;
+  let videoId = null;
 
-  if (room) {
-    // send reponse that room exists
-    if (room.connectedUsers.length > 3) {
-      return res.send({ roomExists: true, full: true });
-    } else {
-      return res.send({ roomExists: true, full: false });
+  let roomsList = rooms.filter((room) => {
+    return room.guildId == guildId;
+  });
+
+  for (i = 0; i < 3; i++) {
+    if (
+      !roomsList.find(
+        (room) => room.id === guildId.toString() + "-" + i.toString()
+      )
+    ) {
+      const newRoom = {
+        id: guildId.toString() + "-" + i.toString(),
+        videoId,
+        guildId,
+        connectedUsers: [],
+      };
+      roomsList = [...roomsList, newRoom];
     }
-  } else {
-    // send response that room does not exists
-    return res.send({ roomExists: false });
+  }
+
+  console.log(roomsList);
+
+  return res.send({ roomsList });
+});
+
+app.get("/api/get-turn-credentials", (req, res) => {
+  const accountSid = "AC7cff1792ce0f8d410f4790a5048eeeb7";
+  const authToken = "c9f5e65fe22c2e6764d5ca5530d4970c";
+
+  const client = twilio(accountSid, authToken);
+
+  res.send({ token: null });
+  try {
+    client.tokens.create().then((token) => {
+      res.send({ token });
+    });
+  } catch (err) {
+    console.log("error occurred when fetching turn server credentials");
+    console.log(err);
+    res.send({ token: null });
   }
 });
 
@@ -61,23 +89,25 @@ io.on("connection", (socket) => {
   socket.on("conn-init", (data) => {
     initializeConnectionHandler(data, socket);
   });
+
+  socket.on("direct-message", (data) => {
+    directMessageHandler(data, socket);
+  });
 });
 
 // socket.io handlers
 
 const createNewRoomHandler = (data, socket) => {
   console.log("host is creating new room");
-  console.log(data);
-  const { identity } = data;
 
-  const roomId = uuidv4();
+  const { identity, videoId, learningRecordId, roomId, guildId } = data;
 
   // create new user
   const newUser = {
     identity,
-    id: uuidv4(),
     socketId: socket.id,
     roomId,
+    learningRecordId,
   };
 
   // push that user to connectedUsers
@@ -86,6 +116,8 @@ const createNewRoomHandler = (data, socket) => {
   //create new room
   const newRoom = {
     id: roomId,
+    videoId,
+    guildId,
     connectedUsers: [newUser],
   };
   // join socket.io room
@@ -94,21 +126,22 @@ const createNewRoomHandler = (data, socket) => {
   rooms = [...rooms, newRoom];
 
   // emit to that client which created that room roomId
-  socket.emit("room-id", { roomId });
+  // socket.emit("room-id", { roomId });
 
   // emit an event to all users connected
   // to that room about new users which are right in this room
-  socket.emit("room-update", { connectedUsers: newRoom.connectedUsers });
+  console.log(rooms);
+  socket.emit("room-update", newRoom);
 };
 
 const joinRoomHandler = (data, socket) => {
-  const { identity, roomId } = data;
+  const { identity, roomId, learningRecordId } = data;
 
   const newUser = {
     identity,
-    id: uuidv4(),
     socketId: socket.id,
     roomId,
+    learningRecordId,
   };
 
   // join room as user which just is trying to join room passing room id
@@ -178,6 +211,31 @@ const initializeConnectionHandler = (data, socket) => {
 
   const initData = { connUserSocketId: socket.id };
   io.to(connUserSocketId).emit("conn-init", initData);
+};
+
+const directMessageHandler = (data, socket) => {
+  if (
+    connectedUsers.find(
+      (connUser) => connUser.socketId === data.receiverSocketId
+    )
+  ) {
+    const receiverData = {
+      authorSocketId: socket.id,
+      messageContent: data.messageContent,
+      isAuthor: false,
+      identity: data.identity,
+    };
+    socket.to(data.receiverSocketId).emit("direct-message", receiverData);
+
+    const authorData = {
+      receiverSocketId: data.receiverSocketId,
+      messageContent: data.messageContent,
+      isAuthor: true,
+      identity: data.identity,
+    };
+
+    socket.emit("direct-message", authorData);
+  }
 };
 
 server.listen(PORT, () => {
